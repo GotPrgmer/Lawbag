@@ -116,13 +116,35 @@ public class TableEventListener {
                 EventDeserializer.CompatibilityMode.DATE_AND_TIME_AS_LONG,
                 EventDeserializer.CompatibilityMode.CHAR_AND_BINARY_AS_BYTE_ARRAY
         );
+        List<Event> dmlEvents = new ArrayList<>();  // DML 이벤트 저장 리스트
+
 
         logClient.registerEventListener(event -> {
 
             // 이벤트 타입에 따라서 Data가 없는 것도 있음.
             // 따라서 바로 event.getData를 호출하는 것은 주의
             final EventType eventType = event.getHeader().getEventType();
+            if (eventType == EventType.WRITE_ROWS || eventType == EventType.UPDATE_ROWS || eventType == EventType.DELETE_ROWS) {
+                dmlEvents.add(event);  // DML 이벤트 저장
+            }
+
+            // XID 이벤트 발생 시 트랜잭션 커밋
+
             if (eventType == EventType.XID) {
+                dmlEvents.forEach(dmlEvent -> {
+                    // DML 이벤트에서 데이터를 추출하여 로그 출력
+                    if (dmlEvent.getData() instanceof WriteRowsEventData) {
+                        WriteRowsEventData data = (WriteRowsEventData) dmlEvent.getData();
+                        data.getRows().forEach(row -> log.info("Inserted row: " + Arrays.toString(row)));
+                    } else if (dmlEvent.getData() instanceof UpdateRowsEventData) {
+                        UpdateRowsEventData data = (UpdateRowsEventData) dmlEvent.getData();
+                        data.getRows().forEach(row -> log.info("Updated row before: " + Arrays.toString(row.getKey()) +
+                                ", after: " + Arrays.toString(row.getValue())));
+                    }
+                    // DeleteRowsEventData 처리 추가 가능
+                });
+
+                dmlEvents.clear();  // 트랜잭션 완료 후 DML 이벤트 리스트 초기화
 
                 List<Map<String, List<String>>> filteredValuesByRows = new ArrayList<>();
 
