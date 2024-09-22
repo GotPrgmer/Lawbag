@@ -67,7 +67,7 @@ public class TableEventListener {
         try (Connection connection = dataSource.getConnection()) {
             connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             DatabaseMetaData metaData = connection.getMetaData();
-            try (ResultSet tableResultSet = metaData.getTables(dbName, "public", null, new String[]{"TABLE"})) {
+            try (ResultSet tableResultSet = metaData.getTables(dbName, null, null, new String[]{"TABLE"})) {
                 // metaData의 테이블 정보를 가져옴
                 while (tableResultSet.next()) {
                     // 테이블 이름을 tableName에 저장
