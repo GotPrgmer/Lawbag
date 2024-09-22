@@ -180,8 +180,10 @@ public class TableEventListener {
                                                 wce.getEventName(),
                                                 wce.getResultColumnNames()
                                                         .stream()
+                                                        .peek(columnName -> log.info("Processing column: " + columnName))  // columnName 로그 출력
                                                         .map(columnName ->
                                                                 columnOrdersForTable.getOrDefault(columnName.toLowerCase(), -1))
+                                                        .peek(index -> log.info("Mapped index for column: " + index))  // 인덱스 값도 출력
                                                         .toList()
 
                                         );
@@ -229,9 +231,14 @@ public class TableEventListener {
                                                 Stream.concat(
                                                         Stream.of(columnOrdersForTable.getOrDefault(wce.getColumnName().toLowerCase(), -1)),
                                                         wce.getResultColumnNames()
+
                                                                 .stream()
+                                                                .peek(columnName -> log.info("Processing column: " + columnName))  // columnName 로그 출력
+
                                                                 .map(columnName ->
                                                                         columnOrdersForTable.getOrDefault(columnName.toLowerCase(), -1))
+                                                                .peek(index -> log.info("Mapped index for column: " + index))  // 인덱스 값도 출력
+
                                                 ).toList()
                                         );
                                     })
