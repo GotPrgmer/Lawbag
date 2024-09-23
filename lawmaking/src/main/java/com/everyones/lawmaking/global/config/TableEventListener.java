@@ -132,7 +132,7 @@ public class TableEventListener {
 
         log.debug("BinaryLogClient created with host: {}, port: {}, user: {}", host, port, user);
 
-        List<Event> dmlEvents = new ArrayList<>();  // DML 이벤트 저장 리스트
+
 
         logClient.registerEventListener(event -> {
             final EventType eventType = event.getHeader().getEventType();
@@ -261,7 +261,7 @@ public class TableEventListener {
                             });
                 });
 
-                log.info("Creating notification thread...");
+                log.debug("Creating notification thread...");
                 Thread notificationCreatorThread = new Thread(() -> {
 
                     int delay = 100;  // 초기 지연 시간
@@ -270,7 +270,7 @@ public class TableEventListener {
                         try {
                             Thread.sleep(delay);
                             notificationCreator.createNotification(filteredValuesByRows);
-                            log.info("Notification created successfully.");
+                            log.debug("Notification created successfully.");
                             break;  // 성공적으로 알림 생성 후 루프 종료
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
