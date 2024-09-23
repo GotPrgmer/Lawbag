@@ -63,35 +63,51 @@ public class TableEventListener {
      */
     Map<String, Map<String, Integer>> fetchColumnOrdersByTable() {
         Map<String, Map<String, Integer>> columnOrdersByTable = new HashMap<>();
-
+        log.info("Attempting to connect to the database...");
         try (Connection connection = dataSource.getConnection()) {
+            log.info("Setting transaction isolation to READ_COMMITTED.");
             connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             DatabaseMetaData metaData = connection.getMetaData();
-            try (ResultSet tableResultSet = metaData.getTables(dbName, null, null, new String[]{"TABLE"})) {
+            log.info("Successfully connected to the database: {}", dbName);
+            log.info("Fetching table information from database: {}", dbName);
+
+            try (ResultSet tableResultSet = metaData.getTables(dbName, "public", null, new String[]{"TABLE"})) {
                 // metaData의 테이블 정보를 가져옴
                 while (tableResultSet.next()) {
                     // 테이블 이름을 tableName에 저장
                     String tableName = tableResultSet.getString("TABLE_NAME").toLowerCase();
+                    log.info("Found table: {}", tableName);
 
                     // 컬럼 네임별 인덱스 저장할 해시맵 생성
                     Map<String, Integer> columnOrders = new HashMap<>();
+                    log.info("Fetching columns for table: {}", tableName);
 
                     // 해당 table의 컬럼 가져와서 try-with 구문 시작
                     try (ResultSet columnResultSet = metaData.getColumns(dbName, "public", tableName, null)) {
                         // 컬럼 이름과 컬럼 매칭 인덱스를 맵에 저장
                         while (columnResultSet.next()) {
+                            String columnName = columnResultSet.getString("COLUMN_NAME").toLowerCase();
+                            int columnIndex = columnResultSet.getInt("ORDINAL_POSITION") - 1;
+                            log.info("Found column: {}, Index: {}", columnName, columnIndex);
+
                             columnOrders.put(columnResultSet.getString("COLUMN_NAME").toLowerCase(), columnResultSet.getInt("ORDINAL_POSITION") - 1);
                         }
                     }
                     // 테이블 당 컬럼들의 네임과 인덱스를 저장한 해시맵을 put
                     columnOrdersByTable.put(tableName, Collections.unmodifiableMap(columnOrders));
+                    log.info("Finished processing columns for table: {}", tableName);
+
                 }
 
             }
+            log.info("Finished fetching table information.");
+
         } catch (SQLException e) {
             log.error("Failed to fetch column orders by table", e);
             throw new RuntimeException(e);
         }
+        log.info("Returning unmodifiable map of column orders by table.");
+
         return Collections.unmodifiableMap(columnOrdersByTable);
     }
 
