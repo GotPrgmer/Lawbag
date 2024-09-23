@@ -116,6 +116,7 @@ public class TableEventListener {
                 EventDeserializer.CompatibilityMode.DATE_AND_TIME_AS_LONG,
                 EventDeserializer.CompatibilityMode.CHAR_AND_BINARY_AS_BYTE_ARRAY
         );
+        logClient.setEventDeserializer(eventDeserializer);
 
         logClient.registerEventListener(event -> {
 
@@ -137,7 +138,6 @@ public class TableEventListener {
                     if (!watchedTableNames.contains(tableName)) return;
 
                     final Set<Event> dmlOperations = tableMapInfo.getDmlEvents();
-                    //TODO: 시간 순서대로 리스트를 받지 않는 문제가 있음 만약 수정 삭제 생성이 한 트랜잭션에서 여러 작업이 동시에 일어나는 경우 잘못된 알림이 발생할 경우가 있음.
                     dmlOperations.stream()
                             .sorted(Comparator.comparing(e -> e.getHeader().getTimestamp()))
                             .forEach(e -> {
@@ -246,7 +246,6 @@ public class TableEventListener {
                                                     })
                                                     .toList());
                                 }
-                                // TODO: DeleteRowsEventData 처리 필요 시 추가
                             });
                 });
 
@@ -266,12 +265,10 @@ public class TableEventListener {
                             break;
                         } catch (Exception e) {
                             delay *= 2;  // 실패 시 지연 시간 증가
-                            if (delay > maxDelay) {
-                                log.error("Failed to create notification after retries", e);
-                                break;
-                            }
+                            log.error("Failed to create notification, retrying with delay {}", delay, e);
                         }
-                    }});
+                    }
+                });
                 notificationCreatorThread.start();
 
                 relatedTableMapEvents.clear();
