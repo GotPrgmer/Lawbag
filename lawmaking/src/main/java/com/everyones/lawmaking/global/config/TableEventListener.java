@@ -63,66 +63,46 @@ public class TableEventListener {
      */
     Map<String, Map<String, Integer>> fetchColumnOrdersByTable() {
         Map<String, Map<String, Integer>> columnOrdersByTable = new HashMap<>();
-        log.info("Attempting to connect to the database...");
+
         try (Connection connection = dataSource.getConnection()) {
-            log.info("Setting transaction isolation to READ_COMMITTED.");
             connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             DatabaseMetaData metaData = connection.getMetaData();
-            log.info("Successfully connected to the database: {}", dbName);
-            log.info("Fetching table information from database: {}", dbName);
-
             try (ResultSet tableResultSet = metaData.getTables(dbName, "public", null, new String[]{"TABLE"})) {
                 // metaData의 테이블 정보를 가져옴
                 while (tableResultSet.next()) {
                     // 테이블 이름을 tableName에 저장
                     String tableName = tableResultSet.getString("TABLE_NAME").toLowerCase();
-                    log.info("Found table: {}", tableName);
 
                     // 컬럼 네임별 인덱스 저장할 해시맵 생성
                     Map<String, Integer> columnOrders = new HashMap<>();
-                    log.info("Fetching columns for table: {}", tableName);
 
                     // 해당 table의 컬럼 가져와서 try-with 구문 시작
                     try (ResultSet columnResultSet = metaData.getColumns(dbName, "public", tableName, null)) {
                         // 컬럼 이름과 컬럼 매칭 인덱스를 맵에 저장
                         while (columnResultSet.next()) {
-                            String columnName = columnResultSet.getString("COLUMN_NAME").toLowerCase();
-                            int columnIndex = columnResultSet.getInt("ORDINAL_POSITION") - 1;
-                            log.info("Found column: {}, Index: {}", columnName, columnIndex);
-
                             columnOrders.put(columnResultSet.getString("COLUMN_NAME").toLowerCase(), columnResultSet.getInt("ORDINAL_POSITION") - 1);
                         }
                     }
                     // 테이블 당 컬럼들의 네임과 인덱스를 저장한 해시맵을 put
                     columnOrdersByTable.put(tableName, Collections.unmodifiableMap(columnOrders));
-                    log.info("Finished processing columns for table: {}", tableName);
-
                 }
 
             }
-            log.info("Finished fetching table information.");
-
         } catch (SQLException e) {
             log.error("Failed to fetch column orders by table", e);
             throw new RuntimeException(e);
         }
-        log.info("Returning unmodifiable map of column orders by table.");
-
         return Collections.unmodifiableMap(columnOrdersByTable);
     }
 
 
     @Bean(destroyMethod = "disconnect")
     BinaryLogClient binaryLogClient() throws IOException {
-        log.info("Initializing BinaryLogClient...");
-
         final Map<String, Map<String, Integer>> columnOrdersByTable = fetchColumnOrdersByTable();
-        log.info("Successfully fetched column orders by table.");
 
         final List<ColumnEventType> watchedColumnEvents = List.of(ColumnEventType.values());
-        final List<String> watchedTableNames = watchedColumnEvents.stream().map(ColumnEventType::getTableName).toList();
 
-        log.info("Watched Table Names: {}", watchedTableNames);
+        final List<String> watchedTableNames = watchedColumnEvents.stream().map(ColumnEventType::getTableName).toList();
 
         BinaryLogClient logClient = new BinaryLogClient(
                 host,
@@ -130,45 +110,23 @@ public class TableEventListener {
                 user,
                 password);
 
-        log.info("BinaryLogClient created with host: {}, port: {}, user: {}", host, port, user);
-
         // 받은 데이터를 BYTE 로 표현
         EventDeserializer eventDeserializer = new EventDeserializer();
         eventDeserializer.setCompatibilityMode(
                 EventDeserializer.CompatibilityMode.DATE_AND_TIME_AS_LONG,
                 EventDeserializer.CompatibilityMode.CHAR_AND_BINARY_AS_BYTE_ARRAY
         );
-        logClient.setEventDeserializer(eventDeserializer);
-        log.info("EventDeserializer set with compatibility modes.");
-
-        List<Event> dmlEvents = new ArrayList<>();  // DML 이벤트 저장 리스트
 
         logClient.registerEventListener(event -> {
+
+            // 이벤트 타입에 따라서 Data가 없는 것도 있음.
+            // 따라서 바로 event.getData를 호출하는 것은 주의
             final EventType eventType = event.getHeader().getEventType();
-            log.info("Received EventType: {}", eventType);
-
-            if (eventType == EventType.WRITE_ROWS || eventType == EventType.UPDATE_ROWS || eventType == EventType.DELETE_ROWS) {
-                log.info("DML event detected: {}", eventType);
-                dmlEvents.add(event);  // DML 이벤트 저장
-            }
-
             if (eventType == EventType.XID) {
-                log.info("XID event detected, processing DML events.");
-                dmlEvents.forEach(dmlEvent -> {
-                    if (dmlEvent.getData() instanceof WriteRowsEventData) {
-                        WriteRowsEventData data = (WriteRowsEventData) dmlEvent.getData();
-                        data.getRows().forEach(row -> log.info("Inserted row: {}", Arrays.toString(row)));
-                    } else if (dmlEvent.getData() instanceof UpdateRowsEventData) {
-                        UpdateRowsEventData data = (UpdateRowsEventData) dmlEvent.getData();
-                        data.getRows().forEach(row -> log.info("Updated row before: {}, after: {}", Arrays.toString(row.getKey()), Arrays.toString(row.getValue())));
-                    }
-                    // DeleteRowsEventData 처리 추가 가능
-                });
-
-                dmlEvents.clear();  // 트랜잭션 완료 후 DML 이벤트 리스트 초기화
 
                 List<Map<String, List<String>>> filteredValuesByRows = new ArrayList<>();
-                log.info("Processing related table map events...");
+
+                // Operation에 따라서 before after 변화를 감지.
                 relatedTableMapEvents.forEach((_tableId, tableMapInfo) -> {
                     // 여기서 매핑정보들 테이블id 와 before after 변화 감지해서 원하는 알림처리 메소드 호출
                     final TableMapEventData tableMapEventData = tableMapInfo.getTableMapEventData();
@@ -179,14 +137,17 @@ public class TableEventListener {
                     if (!watchedTableNames.contains(tableName)) return;
 
                     final Set<Event> dmlOperations = tableMapInfo.getDmlEvents();
+                    //TODO: 시간 순서대로 리스트를 받지 않는 문제가 있음 만약 수정 삭제 생성이 한 트랜잭션에서 여러 작업이 동시에 일어나는 경우 잘못된 알림이 발생할 경우가 있음.
                     dmlOperations.stream()
                             .sorted(Comparator.comparing(e -> e.getHeader().getTimestamp()))
                             .forEach(e -> {
                                 final EventData data = e.getData();
+                                // 하나의 트랜잭션에는 여러개의 로우가 관여할 수 있음, 또한 하나의 Serializable 객체는 하나의 컬럼 값임.
                                 if (data instanceof WriteRowsEventData insertedData) {
                                     List<Serializable[]> rows = insertedData.getRows();
-                                    log.info("WriteRowsEventData detected for table: {}", tableName);
 
+                                    // WriteRows에 관한 알림처리할 컬럼 인덱스 필터링
+                                    // 알림 데이터로 필요한 (이벤트네임, 컬럼 인덱스)를 저장
                                     Map<String, List<Integer>> resultColumnsIndicesByEvent = watchedColumnEvents
                                             .stream()
                                             .filter(wce -> tableName.equalsIgnoreCase(wce.getTableName())
@@ -197,33 +158,100 @@ public class TableEventListener {
                                                         wce.getEventName(),
                                                         wce.getResultColumnNames()
                                                                 .stream()
-                                                                .peek(columnName -> log.info("Processing column: {}", columnName))  // columnName 로그 출력
                                                                 .map(columnName ->
                                                                         columnOrdersForTable.getOrDefault(columnName.toLowerCase(), -1))
-                                                                .peek(index -> log.info("Mapped index for column: {}", index))  // 인덱스 값도 출력
                                                                 .toList()
+
                                                 );
                                             })
                                             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
+                                    // 이벤트 타입, 필터된 컬럼데이터
                                     filteredValuesByRows.addAll(
                                             rows.stream()
                                                     .map(row -> {
                                                         final Map<String, List<String>> filteredValues = new HashMap<>();
                                                         resultColumnsIndicesByEvent.forEach((eventName, columnIndices) -> {
                                                             final List<String> values = new ArrayList<>();
+                                                            //관련된 컬럼 인덱스 리스트인 columnIndices와 매칭되는 인덱스의 데이터값을 values에 넣기
                                                             columnIndices.stream().filter(index -> index >= 0).forEach((index) -> values.add(row[index].toString()));
                                                             filteredValues.put(eventName, Collections.unmodifiableList(values));
                                                         });
                                                         return Collections.unmodifiableMap(filteredValues);
                                                     })
                                                     .toList());
+
+
+                                    // 필요한 테이블 : bill, CongressMan
+                                    // 컬럼 : 의원이 새로운 법안을 발의함(bill의 bill_name), 의원이 새로 추가됨(name)
+                                    // 알림 보내야할 테이블이면 bill_name 혹은 의원 이름을 추출해서 알림 메시지로 보내버림
+
+
+                                    // @TODO: 데이터 삭제 알림 필요시 주석 해제
+                                    //} else if (data instanceof DeleteRowsEventData) {
+                                    //final DeleteRowsEventData insertedData = (DeleteRowsEventData) data;
+                                } else if (data instanceof UpdateRowsEventData changedData) {
+
+                                    // 필요한 테이블 : bill, CongressMan
+                                    // 컬럼 : 법안의 처리상태 변동(bill의 bill_name, stage), 의원의 정당 바뀜(이름, 바뀐정당)
+
+                                    //List로 스트림 건 후 before after를 지정 컬럼으로 확인
+                                    // 알림 이벤트 타입이랑 인덱스 추출
+                                    Map<String, List<Integer>> resultColumnsIndicesByEvent = watchedColumnEvents
+                                            .stream()
+                                            .filter(wce -> tableName.equalsIgnoreCase(wce.getTableName())
+                                                    && wce.getEventType() == ColumnEventType.EventType.UPDATE)
+                                            .map(wce -> {
+                                                final Map<String, Integer> columnOrdersForTable = columnOrdersByTable.getOrDefault(tableName, new HashMap<>());
+                                                return new AbstractMap.SimpleEntry<>(
+                                                        wce.getEventName(),
+                                                        Stream.concat(
+                                                                Stream.of(columnOrdersForTable.getOrDefault(wce.getColumnName().toLowerCase(), -1)),
+                                                                wce.getResultColumnNames()
+                                                                        .stream()
+                                                                        .map(columnName ->
+                                                                                columnOrdersForTable.getOrDefault(columnName.toLowerCase(), -1))
+                                                        ).toList()
+                                                );
+                                            })
+                                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+
+                                    List<Map.Entry<Serializable[], Serializable[]>> rows = changedData.getRows();
+
+                                    //이벤트 타입, 필터된 컬럼데이터
+                                    //Before Rows와 After Rows의 지정 인덱스가 바뀌었는지 변화 감지
+                                    //감지한 컬럼 인덱스로 컬럼 내용 변화 감지.
+                                    filteredValuesByRows.addAll(
+                                            rows.stream()
+                                                    .map(row -> {
+                                                        // key와 value가 각각 before after
+                                                        Serializable[] before = row.getKey();
+                                                        Serializable[] after = row.getValue();
+
+                                                        final Map<String, List<String>> filteredValues = new HashMap<>();
+
+                                                        resultColumnsIndicesByEvent.forEach((eventName, columnIndices) -> {
+                                                            // 각 행의 변화감지 인덱스를 넣어서 만약에 바뀌면 아래를 실행
+                                                            int watchedColumnIndex = columnIndices.get(0);
+                                                            if (!Objects.equals(before[watchedColumnIndex], after[watchedColumnIndex])) {
+                                                                final List<String> values = new ArrayList<>();
+                                                                columnIndices.stream()
+                                                                        .skip(1)
+                                                                        .filter(index -> index >= 0)
+                                                                        .forEach(index -> values.add(after[index].toString()));
+                                                                filteredValues.put(eventName, Collections.unmodifiableList(values));
+                                                            }
+                                                        });
+                                                        return Collections.unmodifiableMap(filteredValues);
+                                                    })
+                                                    .toList());
                                 }
+                                // TODO: DeleteRowsEventData 처리 필요 시 추가
                             });
                 });
 
-                log.info("Creating notification thread...");
-                Thread notificationCreatorThread = new Thread(() -> {
+
+                Thread notificationCreatorThread = new Thread(()->{
 
                     int delay = 100;  // 초기 지연 시간
                     int maxDelay = 1000;  // 최대 지연 시간
@@ -231,7 +259,6 @@ public class TableEventListener {
                         try {
                             Thread.sleep(delay);
                             notificationCreator.createNotification(filteredValuesByRows);
-                            log.info("Notification created successfully.");
                             break;  // 성공적으로 알림 생성 후 루프 종료
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
@@ -239,17 +266,18 @@ public class TableEventListener {
                             break;
                         } catch (Exception e) {
                             delay *= 2;  // 실패 시 지연 시간 증가
-                            log.error("Failed to create notification, retrying with delay {}", delay, e);
+                            if (delay > maxDelay) {
+                                log.error("Failed to create notification after retries", e);
+                                break;
+                            }
                         }
-                    }
-                });
+                    }});
                 notificationCreatorThread.start();
 
                 relatedTableMapEvents.clear();
             } else if (recordedEventTypes.contains(eventType)) {
                 Long tableId = getTableId(event);
                 if (tableId != null) {
-                    log.info("Handling event for table ID: {}", tableId);
                     handleEvent(event, tableId);
                 }
             }
@@ -257,7 +285,6 @@ public class TableEventListener {
         Thread thread = new Thread(() -> {
             try {
                 logClient.connect();
-                log.info("BinaryLogClient connected.");
             } catch (IOException e) {
                 log.error("Failed to connect BinaryLogClient", e);
             }
@@ -269,7 +296,6 @@ public class TableEventListener {
 
         return logClient;
     }
-
 
 
     private void handleEvent(Event event, long tableId) {
