@@ -63,24 +63,24 @@ public class TableEventListener {
      */
     Map<String, Map<String, Integer>> fetchColumnOrdersByTable() {
         Map<String, Map<String, Integer>> columnOrdersByTable = new HashMap<>();
-        log.info("Attempting to connect to the database...");
+        log.debug("Attempting to connect to the database...");
         try (Connection connection = dataSource.getConnection()) {
-            log.info("Setting transaction isolation to READ_COMMITTED.");
+            log.debug("Setting transaction isolation to READ_COMMITTED.");
             connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
             DatabaseMetaData metaData = connection.getMetaData();
-            log.info("Successfully connected to the database: {}", dbName);
-            log.info("Fetching table information from database: {}", dbName);
+            log.debug("Successfully connected to the database: {}", dbName);
+            log.debug("Fetching table information from database: {}", dbName);
 
             try (ResultSet tableResultSet = metaData.getTables(dbName, "public", null, new String[]{"TABLE"})) {
                 // metaData의 테이블 정보를 가져옴
                 while (tableResultSet.next()) {
                     // 테이블 이름을 tableName에 저장
                     String tableName = tableResultSet.getString("TABLE_NAME");
-                    log.info("Found table: {}", tableName);
+                    log.debug("Found table: {}", tableName);
 
                     // 컬럼 네임별 인덱스 저장할 해시맵 생성
                     Map<String, Integer> columnOrders = new HashMap<>();
-                    log.info("Fetching columns for table: {}", tableName);
+                    log.debug("Fetching columns for table: {}", tableName);
 
                     // 해당 table의 컬럼 가져와서 try-with 구문 시작
                     try (ResultSet columnResultSet = metaData.getColumns(dbName, "public", tableName, null)) {
@@ -88,25 +88,25 @@ public class TableEventListener {
                         while (columnResultSet.next()) {
                             String columnName = columnResultSet.getString("COLUMN_NAME").toLowerCase();
                             int columnIndex = columnResultSet.getInt("ORDINAL_POSITION") - 1;
-                            log.info("Found column: {}, Index: {}", columnName, columnIndex);
+                            log.debug("Found column: {}, Index: {}", columnName, columnIndex);
 
                             columnOrders.put(columnResultSet.getString("COLUMN_NAME").toLowerCase(), columnResultSet.getInt("ORDINAL_POSITION") - 1);
                         }
                     }
                     // 테이블 당 컬럼들의 네임과 인덱스를 저장한 해시맵을 put
                     columnOrdersByTable.put(tableName, Collections.unmodifiableMap(columnOrders));
-                    log.info("Finished processing columns for table: {}", tableName);
+                    log.debug("Finished processing columns for table: {}", tableName);
 
                 }
 
             }
-            log.info("Finished fetching table information.");
+            log.debug("Finished fetching table information.");
 
         } catch (SQLException e) {
             log.error("Failed to fetch column orders by table", e);
             throw new RuntimeException(e);
         }
-        log.info("Returning unmodifiable map of column orders by table.");
+        log.debug("Returning unmodifiable map of column orders by table.");
 
         return Collections.unmodifiableMap(columnOrdersByTable);
     }
@@ -114,15 +114,15 @@ public class TableEventListener {
 
     @Bean(destroyMethod = "disconnect")
     BinaryLogClient binaryLogClient() throws IOException {
-        log.info("Initializing BinaryLogClient...");
+        log.debug("Initializing BinaryLogClient...");
 
         final Map<String, Map<String, Integer>> columnOrdersByTable = fetchColumnOrdersByTable();
-        log.info("Successfully fetched column orders by table.");
+        log.debug("Successfully fetched column orders by table.");
 
         final List<ColumnEventType> watchedColumnEvents = List.of(ColumnEventType.values());
         final List<String> watchedTableNames = watchedColumnEvents.stream().map(ColumnEventType::getTableName).toList();
 
-        log.info("Watched Table Names: {}", watchedTableNames);
+        log.debug("Watched Table Names: {}", watchedTableNames);
 
         BinaryLogClient logClient = new BinaryLogClient(
                 host,
@@ -130,45 +130,19 @@ public class TableEventListener {
                 user,
                 password);
 
-        log.info("BinaryLogClient created with host: {}, port: {}, user: {}", host, port, user);
-
-        // 받은 데이터를 BYTE 로 표현
-        EventDeserializer eventDeserializer = new EventDeserializer();
-        eventDeserializer.setCompatibilityMode(
-                EventDeserializer.CompatibilityMode.DATE_AND_TIME_AS_LONG,
-                EventDeserializer.CompatibilityMode.CHAR_AND_BINARY_AS_BYTE_ARRAY
-        );
-        logClient.setEventDeserializer(eventDeserializer);
-        log.info("EventDeserializer set with compatibility modes.");
+        log.debug("BinaryLogClient created with host: {}, port: {}, user: {}", host, port, user);
 
         List<Event> dmlEvents = new ArrayList<>();  // DML 이벤트 저장 리스트
 
         logClient.registerEventListener(event -> {
             final EventType eventType = event.getHeader().getEventType();
-            log.info("Received EventType: {}", eventType);
-
-            if (eventType == EventType.WRITE_ROWS || eventType == EventType.UPDATE_ROWS || eventType == EventType.DELETE_ROWS) {
-                log.info("DML event detected: {}", eventType);
-                dmlEvents.add(event);  // DML 이벤트 저장
-            }
+            log.debug("Received EventType: {}", eventType);
 
             if (eventType == EventType.XID) {
-                log.info("XID event detected, processing DML events.");
-                dmlEvents.forEach(dmlEvent -> {
-                    if (dmlEvent.getData() instanceof WriteRowsEventData) {
-                        WriteRowsEventData data = (WriteRowsEventData) dmlEvent.getData();
-                        data.getRows().forEach(row -> log.info("Inserted row: {}", Arrays.toString(row)));
-                    } else if (dmlEvent.getData() instanceof UpdateRowsEventData) {
-                        UpdateRowsEventData data = (UpdateRowsEventData) dmlEvent.getData();
-                        data.getRows().forEach(row -> log.info("Updated row before: {}, after: {}", Arrays.toString(row.getKey()), Arrays.toString(row.getValue())));
-                    }
-                    // DeleteRowsEventData 처리 추가 가능
-                });
-
-                dmlEvents.clear();  // 트랜잭션 완료 후 DML 이벤트 리스트 초기화
+                log.debug("XID event detected, processing DML events.");
 
                 List<Map<String, List<String>>> filteredValuesByRows = new ArrayList<>();
-                log.info("Processing related table map events...");
+                log.debug("Processing related table map events...");
                 relatedTableMapEvents.forEach((_tableId, tableMapInfo) -> {
                     // 여기서 매핑정보들 테이블id 와 before after 변화 감지해서 원하는 알림처리 메소드 호출
                     final TableMapEventData tableMapEventData = tableMapInfo.getTableMapEventData();
@@ -185,7 +159,7 @@ public class TableEventListener {
                                 final EventData data = e.getData();
                                 if (data instanceof WriteRowsEventData insertedData) {
                                     List<Serializable[]> rows = insertedData.getRows();
-                                    log.info("WriteRowsEventData detected for table: {}", tableName);
+                                    log.debug("WriteRowsEventData detected for table: {}", tableName);
 
                                     Map<String, List<Integer>> resultColumnsIndicesByEvent = watchedColumnEvents
                                             .stream()
@@ -197,10 +171,8 @@ public class TableEventListener {
                                                         wce.getEventName(),
                                                         wce.getResultColumnNames()
                                                                 .stream()
-                                                                .peek(columnName -> log.info("Processing column: {}", columnName))  // columnName 로그 출력
                                                                 .map(columnName ->
                                                                         columnOrdersForTable.getOrDefault(columnName.toLowerCase(), -1))
-                                                                .peek(index -> log.info("Mapped index for column: {}", index))  // 인덱스 값도 출력
                                                                 .toList()
                                                 );
                                             })
@@ -316,7 +288,7 @@ public class TableEventListener {
             } else if (recordedEventTypes.contains(eventType)) {
                 Long tableId = getTableId(event);
                 if (tableId != null) {
-                    log.info("Handling event for table ID: {}", tableId);
+                    log.debug("Handling event for table ID: {}", tableId);
                     handleEvent(event, tableId);
                 }
             }
@@ -324,7 +296,7 @@ public class TableEventListener {
         Thread thread = new Thread(() -> {
             try {
                 logClient.connect();
-                log.info("BinaryLogClient connected.");
+                log.debug("BinaryLogClient connected.");
             } catch (IOException e) {
                 log.error("Failed to connect BinaryLogClient", e);
             }
