@@ -75,7 +75,7 @@ public class TableEventListener {
                 // metaData의 테이블 정보를 가져옴
                 while (tableResultSet.next()) {
                     // 테이블 이름을 tableName에 저장
-                    String tableName = tableResultSet.getString("TABLE_NAME").toLowerCase();
+                    String tableName = tableResultSet.getString("TABLE_NAME");
                     log.info("Found table: {}", tableName);
 
                     // 컬럼 네임별 인덱스 저장할 해시맵 생성
@@ -173,7 +173,7 @@ public class TableEventListener {
                     // 여기서 매핑정보들 테이블id 와 before after 변화 감지해서 원하는 알림처리 메소드 호출
                     final TableMapEventData tableMapEventData = tableMapInfo.getTableMapEventData();
 
-                    final String tableName = tableMapEventData.getTable().toLowerCase();
+                    final String tableName = tableMapEventData.getTable();
                     // 이벤트 감지가 필요없는 테이블이면 스킵
                     // tableName은 all 소문자로 옴
                     if (!watchedTableNames.contains(tableName)) return;
