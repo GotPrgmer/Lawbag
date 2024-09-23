@@ -217,7 +217,6 @@ public class Facade {
     }
 
     // 알림 데이터를 각 테이블에 해당하는 실제 데이터로 변환 (ex : bill_id
-    // TODO: 컨벤션에 맞게 메소드명 변경 필요
     public List<String> convertRepresentativeBillNotification(List<String> relatedEntityIds) {
         var congressman = congressmanService.findById(relatedEntityIds.get(0));
         var billRepProposer = congressman.getName();
@@ -291,7 +290,7 @@ public class Facade {
     }
 
 
-    public void reissueToken(HttpServletRequest httpServletRequest,HttpServletResponse httpServletResponse) throws Exception {
+    public void reissueToken(HttpServletRequest httpServletRequest,HttpServletResponse httpServletResponse){
         authService.reissueToken(httpServletRequest, httpServletResponse);
     }
 
@@ -358,6 +357,9 @@ public class Facade {
         return setBillListResponseBookMark(billList);
     }
 
+    public List<ParliamentaryPartyResponse> getParliamentaryParty() {
+        return partyService.getParliamentaryParty();
+    }
 
 
 

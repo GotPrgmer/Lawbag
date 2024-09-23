@@ -1,5 +1,6 @@
 package com.everyones.lawmaking.repository;
 
+import com.everyones.lawmaking.common.dto.response.ParliamentaryPartyResponse;
 import com.everyones.lawmaking.domain.entity.Party;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -35,7 +36,10 @@ public interface PartyRepository extends JpaRepository<Party, Long> {
     List<String> findPartyByBillId(@Param("billId") String billId);
 
     Optional<Party> findPartyByName(String partyName);
-
-
+    @Query("SELECT new com.everyones.lawmaking.common.dto.response.ParliamentaryPartyResponse(p.id, p.name, p.partyImageUrl, COUNT(c)) " +
+            "FROM Party p " +
+            "JOIN p.congressmanList c GROUP BY p " +
+            "having p.isParliamentary = true ")
+    List<ParliamentaryPartyResponse> findByIsParliamentary(boolean isParliamentary);
 
 }

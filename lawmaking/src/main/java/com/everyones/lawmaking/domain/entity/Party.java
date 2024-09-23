@@ -64,6 +64,10 @@ public class Party extends BaseEntity{
     @Column(name = "public_bill_count")
     private int publicBillCount = 0;
 
+    @ColumnDefault("0")
+    @Column(name = "is_parliamentary")
+    private Boolean isParliamentary;
+
     public static Party create(String partyName ){
         return Party.builder()
                 .name(partyName)
