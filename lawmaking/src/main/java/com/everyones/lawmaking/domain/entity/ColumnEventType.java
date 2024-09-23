@@ -11,19 +11,19 @@ import java.util.List;
 @Getter
 public enum ColumnEventType {
     RP_INSERT("rp_insert",
-            "representativeproposer",
+            "RepresentativeProposer",
             null,
             EventType.INSERT,
             List.of("congressman_id","bill_id")),
     BILL_STAGE_UPDATE(
             "bill_stage_update",
-            "bill",
+            "Bill",
             "stage",
             EventType.UPDATE,
             List.of("bill_id", "bill_name", "proposers", "stage")),
     CONGRESSMAN_PARTY_UPDATE(
             "congressman_party_update",
-            "congressman",
+            "Congressman",
             "party_id",
             EventType.UPDATE,
             List.of("congressman_id", "party_id", "name"));
