@@ -218,6 +218,73 @@ public class TableEventListener {
                                                         return Collections.unmodifiableMap(filteredValues);
                                                     })
                                                     .toList());
+
+
+                                    // 필요한 테이블 : bill, CongressMan
+                                    // 컬럼 : 의원이 새로운 법안을 발의함(bill의 bill_name), 의원이 새로 추가됨(name)
+                                    // 알림 보내야할 테이블이면 bill_name 혹은 의원 이름을 추출해서 알림 메시지로 보내버림
+
+
+                                    // @TODO: 데이터 삭제 알림 필요시 주석 해제
+                                    //} else if (data instanceof DeleteRowsEventData) {
+                                    //final DeleteRowsEventData insertedData = (DeleteRowsEventData) data;
+                                } else if (data instanceof UpdateRowsEventData changedData) {
+
+                                    // 필요한 테이블 : bill, CongressMan
+                                    // 컬럼 : 법안의 처리상태 변동(bill의 bill_name, stage), 의원의 정당 바뀜(이름, 바뀐정당)
+
+                                    //List로 스트림 건 후 before after를 지정 컬럼으로 확인
+                                    // 알림 이벤트 타입이랑 인덱스 추출
+                                    Map<String, List<Integer>> resultColumnsIndicesByEvent = watchedColumnEvents
+                                            .stream()
+                                            .filter(wce -> tableName.equalsIgnoreCase(wce.getTableName())
+                                                    && wce.getEventType() == ColumnEventType.EventType.UPDATE)
+                                            .map(wce -> {
+                                                final Map<String, Integer> columnOrdersForTable = columnOrdersByTable.getOrDefault(tableName, new HashMap<>());
+                                                return new AbstractMap.SimpleEntry<>(
+                                                        wce.getEventName(),
+                                                        Stream.concat(
+                                                                Stream.of(columnOrdersForTable.getOrDefault(wce.getColumnName().toLowerCase(), -1)),
+                                                                wce.getResultColumnNames()
+                                                                        .stream()
+                                                                        .map(columnName ->
+                                                                                columnOrdersForTable.getOrDefault(columnName.toLowerCase(), -1))
+                                                        ).toList()
+                                                );
+                                            })
+                                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+
+                                    List<Map.Entry<Serializable[], Serializable[]>> rows = changedData.getRows();
+
+                                    //이벤트 타입, 필터된 컬럼데이터
+                                    //Before Rows와 After Rows의 지정 인덱스가 바뀌었는지 변화 감지
+                                    //감지한 컬럼 인덱스로 컬럼 내용 변화 감지.
+                                    filteredValuesByRows.addAll(
+                                            rows.stream()
+                                                    .map(row -> {
+                                                        // key와 value가 각각 before after
+                                                        Serializable[] before = row.getKey();
+                                                        Serializable[] after = row.getValue();
+
+                                                        final Map<String, List<String>> filteredValues = new HashMap<>();
+
+                                                        resultColumnsIndicesByEvent.forEach((eventName, columnIndices) -> {
+                                                            // 각 행의 변화감지 인덱스를 넣어서 만약에 바뀌면 아래를 실행
+                                                            int watchedColumnIndex = columnIndices.get(0);
+                                                            if (!Objects.equals(before[watchedColumnIndex], after[watchedColumnIndex])) {
+                                                                final List<String> values = new ArrayList<>();
+                                                                columnIndices.stream()
+                                                                        .skip(1)
+                                                                        .filter(index -> index >= 0)
+                                                                        .forEach(index -> values.add(after[index].toString()));
+                                                                filteredValues.put(eventName, Collections.unmodifiableList(values));
+                                                            }
+                                                        });
+                                                        return Collections.unmodifiableMap(filteredValues);
+                                                    })
+                                                    .toList());
+
                                 }
                             });
                 });
