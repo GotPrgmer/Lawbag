@@ -36,7 +36,7 @@ public class CongressmanService {
     }
 
     public PartyCongressmanResponse getPartyCongressman(long partyId) {
-        var congressman = congressmanRepository.findByPage(partyId);
+        var congressman = congressmanRepository.findByPartyId(partyId);
         var congresssmanList = congressman.stream()
                 .map(PartyCongressmanDto::from)
                 .toList();
